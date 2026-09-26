@@ -536,16 +536,17 @@ function stopAmbient(){
   audioCtx = null;
   ambientNodes = [];
 }
+const bgMusic = new Audio('marlowemusic-white-noise-588898.mp3');
+bgMusic.loop = true;
+bgMusic.volume = 0.3;
+
 const ambientToggle = document.getElementById('ambientToggle');
 syncSwitch(ambientToggle, state.ambientOn);
-// don't auto-start audio on page load — browsers block it until the person clicks
-// something on the page first. The switch still shows as "on" from last time,
-// but sound only actually starts once they click the toggle themselves.
 ambientToggle.onclick = () => {
   state.ambientOn = !state.ambientOn;
   localStorage.setItem('haven_ambient', state.ambientOn);
   syncSwitch(ambientToggle, state.ambientOn);
-  state.ambientOn ? startAmbient() : stopAmbient();
+  state.ambientOn ? bgMusic.play() : bgMusic.pause();
 };
 
 /* ---------------- API key persistence ---------------- */
