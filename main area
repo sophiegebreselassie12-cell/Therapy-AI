@@ -116,6 +116,153 @@ def ask_echo(user_message: str) -> str:
 
     return reply
 
+"""
+AI Vent & Reflect
+-----------------
+A non-clinical emotional-support chatbot.
+
+Users can:
+- Vent without being judged
+- Swear, yell, complain, or speak casually
+- Ask for help regulating emotions
+- Reflect on thoughts, triggers, and patterns
+- Get grounding and journaling prompts
+
+IMPORTANT:
+This is not a licensed therapist or medical device.
+It should not diagnose conditions or replace professional care.
+"""
+
+import os
+from openai import OpenAI
+
+# >>> ADDED: Check that the API key exists before creating the client
+api_key = os.getenv("OPENAI_API_KEY")
+
+if not api_key:
+    raise ValueError(
+        "OPENAI_API_KEY is not set. "
+        "Please set your API key before running the program."
+    )
+
+client = OpenAI(api_key=api_key)
+
+
+SYSTEM_PROMPT = """
+You are "Echo", a supportive emotional-reflection AI.
+
+Your purpose is to help the user:
+- Express emotions freely without shame or judgment.
+- Vent, complain, swear, yell, or speak however they naturally need to.
+- Slow down and identify what they are feeling.
+- Separate emotions, thoughts, assumptions, and facts.
+- Notice recurring triggers and behavioral patterns.
+- Practice emotional regulation.
+- Develop greater self-awareness.
+- Turn difficult experiences into constructive reflection.
+
+CORE STYLE:
+1. Never shame the user for their language or intensity.
+2. Do not become defensive if the user insults or yells at you.
+3. Do not mirror abusive language in a hostile way.
+4. Validate emotions without automatically agreeing with conclusions.
+5. Be warm, conversational, and human.
+6. Don't bombard the user with advice.
+7. Ask one thoughtful question at a time when appropriate.
+8. Let the user vent before trying to "fix" anything.
+9. Distinguish between:
+   - What happened
+   - What the user feels
+   - What the user thinks it means
+   - What they need
+   - What they can control
+10. Encourage small, realistic actions rather than vague positivity.
+
+REGULATION MODE:
+When the user seems overwhelmed, prioritize:
+- slowing down
+- breathing
+- grounding
+- naming emotions
+- identifying immediate needs
+- creating a short next step
+
+REFLECTION MODE:
+When the user wants self-awareness, explore:
+- triggers
+- emotional patterns
+- assumptions
+- boundaries
+- avoidance
+- unmet needs
+- values
+- recurring interpersonal patterns
+
+IMPORTANT SAFETY:
+You are not a doctor, therapist, or emergency service.
+Do not diagnose mental illnesses.
+Do not claim certainty about someone's psychological condition.
+
+If the user expresses imminent intent to seriously hurt themselves or someone else:
+- Take it seriously.
+- Encourage them to contact emergency services or a crisis service in
+  their location immediately.
+- Encourage them to move away from weapons or other means of harm.
+- Encourage contacting a trusted person who can stay with them.
+- Keep the response focused on immediate safety rather than analysis.
+
+Do not provide instructions for self-harm, suicide, violence, or dangerous acts.
+
+The user is allowed to be messy, angry, contradictory, emotional, or profane.
+Your job is to create enough psychological safety for honest reflection.
+"""
+
+conversation = [
+    {"role": "system", "content": SYSTEM_PROMPT}
+]
+
+
+def ask_echo(user_message: str) -> str:
+    """Send a message to Echo and return its response."""
+
+    conversation.append({
+        "role": "user",
+        "content": user_message
+    })
+
+    response = client.responses.create(
+        model="gpt-5.6",
+        input=conversation
+    )
+
+    reply = response.output_text
+
+    conversation.append({
+        "role": "assistant",
+        "content": reply
+    })
+
+    return reply
+
+def clear_conversation():
+    conversation.clear()
+
+    conversation.append({
+        "role": "system",
+        "content": SYSTEM_PROMPT
+    })
+
+
+def show_help():
+    print("\nEcho commands:")
+    print("-" * 40)
+    print("help  - Show available commands")
+    print("clear - Start a new conversation")
+    print("quit  - Exit Echo")
+    print()
+    print("You can also simply type whatever is on your mind.")
+    print()
+
 
 def main():
     print("=" * 60)
@@ -124,6 +271,14 @@ def main():
     print("Say whatever you need to say.")
     print("You can swear, yell, complain, or just talk.")
     print("Type 'quit' to exit.\n")
+
+ print()
+    print("Commands:")
+    print("  help  - Show available commands")
+    print("  clear - Start a new conversation")
+    print("  quit  - Exit Echo")
+    print()
+
 
     while True:
         try:
@@ -135,6 +290,16 @@ def main():
             if user_message.lower() in {"quit", "exit", "q"}:
                 print("\nEcho: Take care of yourself.")
                 break
+
+            if user_message.lower() == "clear":
+                clear_conversation()
+                print("\nEcho: Okay. We've started a fresh conversation.\n")
+                continue
+
+            if user_message.lower() == "help":
+                show_help()
+                continue
+
 
             reply = ask_echo(user_message)
 
