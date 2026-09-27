@@ -459,9 +459,15 @@ textbox.addEventListener('keydown', (e) => {
 });
 sendBtn.onclick = sendMessage;
 
+let requestInFlight = false;
+
 async function sendMessage(){
+  if(requestInFlight) return; // a reply is already being fetched — don't stack another request on top of it
   const text = textbox.value.trim();
   if(!text) return;
+  requestInFlight = true;
+  sendBtn.disabled = true;
+  sendBtn.style.opacity = 0.5;
   textbox.value = '';
   textbox.style.height = 'auto';
 
@@ -476,6 +482,9 @@ async function sendMessage(){
     state.messages.push({role:'assistant', text: "I need a Gemini API key before I can reply. Paste one into the \"Gemini API Key\" box in the sidebar — it's free from aistudio.google.com/apikey, no card needed — then send your message again. It's stored only in this browser."});
     saveMessages();
     renderChat();
+    requestInFlight = false;
+    sendBtn.disabled = false;
+    sendBtn.style.opacity = 1;
     return;
   }
 
@@ -486,71 +495,104 @@ async function sendMessage(){
   thinkDiv.innerHTML = `<span class="who">Assistant</span>…`;
   chatEl.appendChild(thinkDiv);
   chatEl.scrollTop = chatEl.scrollHeight;
+  function setThinkingText(t){
+    const el = document.getElementById(thinkingId);
+    if(el) el.innerHTML = `<span class="who">Assistant</span>${t}`;
+  }
 
   // Stable alias — always points at Google's current GA flash model,
   // so this keeps working even after Google retires today's snapshot.
   const MODEL = 'gemini-flash-latest';
+  const MAX_ATTEMPTS = 3; // 1 initial try + 2 retries
+  const RETRY_DELAY_MS = 900; // backoff base; doubles each retry
 
   function friendlyApiError(status, apiMessage){
     if(status === 400) return "Gemini rejected that request (" + (apiMessage || 'bad request') + "). Double-check the API key was copied in full, with no extra spaces.";
     if(status === 401 || status === 403) return "Gemini says this API key isn't valid or isn't allowed to make this call. Grab a fresh one from aistudio.google.com/apikey and paste it into the sidebar.";
     if(status === 404) return "Gemini couldn't find the model this app asked for (" + MODEL + "). Google may have renamed or retired it — try again in a bit, or let me know so the model name can be updated.";
     if(status === 429) return "Gemini's free tier is rate-limited and this key just hit that limit. Wait a minute and try again, or use a different key.";
-    if(status >= 500) return "Gemini's servers had a problem on their end (HTTP " + status + "). This isn't something wrong with the key — just try again shortly.";
+    if(status >= 500) return "Gemini's servers are still overloaded after a couple of retries (HTTP " + status + "). This isn't something wrong with the key — wait a bit and try again.";
     return "Gemini returned an error (HTTP " + status + (apiMessage ? ': ' + apiMessage : '') + ").";
   }
 
-  try{
-    const history = state.messages.slice(-16).map(m => ({
-      role: m.role === 'user' ? 'user' : 'model',
-      parts: [{ text: m.text }]
-    }));
-
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(key)}`, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: MODES[state.mode].systemPrompt }] },
-        contents: history
-      })
-    });
-
-    // The response might not be JSON at all (e.g. a proxy/error page) — never let that crash the app.
-    let data = null;
-    try{ data = await res.json(); } catch(parseErr){ data = null; }
-
-    document.getElementById(thinkingId)?.remove();
-
-    let reply;
-    if(!res.ok){
-      reply = friendlyApiError(res.status, data?.error?.message);
-    } else if(data?.candidates?.length && data.candidates[0].content?.parts){
-      reply = data.candidates[0].content.parts.map(p => p.text || '').join('\n').trim();
-      if(!reply){
-        const reason = data.candidates[0].finishReason;
-        reply = reason === 'SAFETY'
-          ? "Gemini declined to answer that particular message. Try rephrasing, or switch modes."
-          : "I got an empty reply back — please try sending that again.";
-      }
-    } else if(data?.promptFeedback?.blockReason){
-      reply = "Gemini blocked that message (" + data.promptFeedback.blockReason + "). Try rephrasing it.";
-    } else {
-      reply = "I didn't get a usable reply from Gemini — please try again.";
-    }
-    state.messages.push({role:'assistant', text: reply});
-    saveMessages();
-    renderChat();
-    if(state.speakEnabled && res.ok) speak(reply);
-  } catch(err){
-    document.getElementById(thinkingId)?.remove();
-    const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-    const msg = offline
-      ? "Looks like you're offline right now. Reconnect and send that again."
-      : "I couldn't reach Gemini just now (" + err.message + "). This is usually a network hiccup or an ad-blocker/firewall blocking generativelanguage.googleapis.com — check your connection and try again.";
-    state.messages.push({role:'assistant', text: msg});
-    saveMessages();
-    renderChat();
+  // Only worth retrying for TRANSIENT failures: server overload (5xx) or a
+  // dropped connection. A bad key or bad request will just fail the same
+  // way every time, so those return immediately instead of wasting retries.
+  function isTransient(status){
+    return status === undefined || status === 503 || status === 500 || status === 502 || status === 504;
   }
+
+  const history = state.messages.slice(-16).map(m => ({
+    role: m.role === 'user' ? 'user' : 'model',
+    parts: [{ text: m.text }]
+  }));
+
+  let lastStatus, lastApiMessage, lastNetworkErr, data = null, res = null;
+
+  for(let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++){
+    try{
+      res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(key)}`, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: MODES[state.mode].systemPrompt }] },
+          contents: history
+        })
+      });
+
+      // The response might not be JSON at all (e.g. a proxy/error page) — never let that crash the app.
+      try{ data = await res.json(); } catch(parseErr){ data = null; }
+
+      if(res.ok) break; // success — stop retrying
+
+      lastStatus = res.status;
+      lastApiMessage = data?.error?.message;
+      lastNetworkErr = null;
+
+      if(!isTransient(lastStatus) || attempt === MAX_ATTEMPTS) break; // don't retry non-transient or last-shot errors
+    } catch(err){
+      lastNetworkErr = err;
+      lastStatus = undefined;
+      if(attempt === MAX_ATTEMPTS) break;
+    }
+
+    // About to retry — keep the "thinking" bubble but hint it's taking a moment.
+    setThinkingText(attempt === 1 ? '… still working on it' : '… hang tight, one more try');
+    await new Promise(r => setTimeout(r, RETRY_DELAY_MS * attempt));
+  }
+
+  document.getElementById(thinkingId)?.remove();
+
+  let reply;
+  if(lastNetworkErr && !(res && res.ok)){
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    reply = offline
+      ? "Looks like you're offline right now. Reconnect and send that again."
+      : "I couldn't reach Gemini after a few tries (" + lastNetworkErr.message + "). This is usually a network hiccup or an ad-blocker/firewall blocking generativelanguage.googleapis.com — check your connection and try again.";
+  } else if(res && !res.ok){
+    reply = friendlyApiError(lastStatus, lastApiMessage);
+  } else if(data?.candidates?.length && data.candidates[0].content?.parts){
+    reply = data.candidates[0].content.parts.map(p => p.text || '').join('\n').trim();
+    if(!reply){
+      const reason = data.candidates[0].finishReason;
+      reply = reason === 'SAFETY'
+        ? "Gemini declined to answer that particular message. Try rephrasing, or switch modes."
+        : "I got an empty reply back — please try sending that again.";
+    }
+  } else if(data?.promptFeedback?.blockReason){
+    reply = "Gemini blocked that message (" + data.promptFeedback.blockReason + "). Try rephrasing it.";
+  } else {
+    reply = "I didn't get a usable reply from Gemini — please try again.";
+  }
+
+  state.messages.push({role:'assistant', text: reply});
+  saveMessages();
+  renderChat();
+  if(state.speakEnabled && res && res.ok) speak(reply);
+
+  requestInFlight = false;
+  sendBtn.disabled = false;
+  sendBtn.style.opacity = 1;
 }
 
 /* ---------------- Mood tracker (expanded emotions, tracking only) ---------------- */
