@@ -175,6 +175,84 @@
   ::-webkit-scrollbar{width:8px;}
   ::-webkit-scrollbar-thumb{background:var(--surface-2); border-radius:8px;}
 
+  #weather-layer{position:absolute; inset:0; pointer-events:none; overflow:hidden; z-index:0; transition:background 1.2s ease;}
+  #topbar, #chat, #composer, #breathe-overlay, #capsule-overlay{position:relative; z-index:1;}
+  .weather-particle{position:absolute; width:6px; height:6px; border-radius:50%; opacity:0; animation:drift linear infinite;}
+  @keyframes drift{
+    0%{transform:translateY(110vh) translateX(0); opacity:0;}
+    10%{opacity:0.5;}
+    90%{opacity:0.5;}
+    100%{transform:translateY(-10vh) translateX(20px); opacity:0;}
+  }
+
+  #capsule-banner{
+    display:none; position:relative; z-index:2; background:rgba(134,169,150,0.15);
+    border-bottom:1px solid var(--sage-soft); color:var(--sage); padding:8px 16px;
+    font-size:12.5px; cursor:pointer; text-align:center;
+  }
+  #capsule-banner.show{display:block;}
+
+  #capsule-overlay{
+    position:absolute; inset:0; background:rgba(8,12,12,0.92); backdrop-filter:blur(4px);
+    display:none; align-items:center; justify-content:center; z-index:20;
+  }
+  #capsule-overlay.show{display:flex;}
+  #capsule-panel{
+    background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:26px;
+    width:420px; max-width:90vw; max-height:82vh; overflow-y:auto;
+    display:flex; flex-direction:column; gap:12px;
+  }
+  #capsule-panel h3{margin:0; font-family:'Fraunces',serif; font-weight:500; font-size:20px;}
+  .capsule-sub{font-size:12.5px; color:var(--text-dim); margin:0; line-height:1.5;}
+  #capsuleText{
+    width:100%; background:var(--surface-2); border:1px solid var(--line); border-radius:10px;
+    color:var(--text); padding:10px; font-family:inherit; font-size:13.5px; resize:vertical;
+  }
+  #capsuleDate{width:100%; color-scheme:dark;}
+  .capsule-item{
+    background:var(--surface-2); border:1px solid var(--line); border-radius:10px;
+    padding:10px 12px; font-size:12.5px; color:var(--text-dim);
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .capsule-item.ready{border-color:var(--sage-soft);}
+  .capsule-item button{align-self:flex-start;}
+
+  #paletteSwatches{display:flex; gap:8px; flex-wrap:wrap;}
+  .palette-swatch{
+    width:30px; height:30px; border-radius:50%; cursor:pointer;
+    border:2px solid transparent; flex-shrink:0; transition:border-color .15s ease, transform .15s ease;
+  }
+  .palette-swatch:hover{transform:scale(1.08);}
+  .palette-swatch.sel{border-color:var(--text);}
+
+  #moodTriggerBtn{
+    background:var(--surface-2); border:1px solid var(--line); color:var(--text-dim);
+    padding:7px 12px; border-radius:20px; font-size:12.5px; cursor:pointer;
+  }
+  #moodTriggerBtn:hover{border-color:var(--sage-soft);}
+  #moodTriggerBtn strong{color:var(--text); font-weight:500;}
+
+  #mood-overlay{
+    position:absolute; inset:0; background:rgba(8,12,12,0.92); backdrop-filter:blur(4px);
+    display:none; align-items:center; justify-content:center; z-index:20;
+  }
+  #mood-overlay.show{display:flex;}
+  #mood-panel{
+    background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:26px;
+    width:380px; max-width:90vw; display:flex; flex-direction:column; gap:14px;
+  }
+  #mood-panel h3{margin:0; font-family:'Fraunces',serif; font-weight:500; font-size:19px;}
+  .mood-grid{display:grid; grid-template-columns:repeat(3, 1fr); gap:8px;}
+  .mood-chip{
+    background:var(--surface-2); border:1px solid var(--line); border-radius:12px;
+    padding:12px 6px; text-align:center; cursor:pointer; color:var(--text-dim);
+    font-size:12px; display:flex; flex-direction:column; align-items:center; gap:4px;
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .mood-chip .emoji{font-size:20px;}
+  .mood-chip:hover{border-color:var(--sage-soft);}
+  .mood-chip.sel{border-color:var(--sage-soft); background:rgba(134,169,150,0.15); color:var(--text);}
+
   @media (max-width:720px){
     #app{grid-template-columns:1fr;}
     #sidebar{position:fixed; z-index:30; left:0; top:0; bottom:0; width:240px; transform:translateX(-100%); transition:transform .2s ease;}
@@ -209,6 +287,11 @@
     </div>
 
     <div class="side-block">
+      <div class="side-label">COLOR PALETTE</div>
+      <div id="paletteSwatches"></div>
+    </div>
+
+    <div class="side-block">
       <div class="side-label">GEMINI API KEY (FREE)</div>
       <input type="password" id="apiKey" placeholder="AIza...">
       <span style="font-size:11px;color:var(--text-dim);">Free from aistudio.google.com — no card needed. Stored only in this browser.</span>
@@ -216,6 +299,7 @@
 
     <div id="utility-btns">
       <button class="ghost-btn" id="breatheBtn">Take a breathing pause</button>
+      <button class="ghost-btn" id="capsuleBtn">Write a time capsule</button>
       <button class="ghost-btn" id="newChatBtn">Start a new conversation</button>
       <button class="ghost-btn" id="exportBtn">Export conversation (.txt)</button>
       <button class="ghost-btn" id="clearBtn">Clear all saved data</button>
@@ -223,6 +307,28 @@
   </aside>
 
   <main id="main">
+    <div id="weather-layer"></div>
+    <div id="capsule-banner">💌 A time capsule is ready to open</div>
+
+    <div id="mood-overlay">
+      <div id="mood-panel">
+        <h3>How are you feeling?</h3>
+        <div class="mood-grid" id="moodGrid"></div>
+      </div>
+    </div>
+
+    <div id="capsule-overlay">
+      <div id="capsule-panel">
+        <h3>Time Capsule</h3>
+        <p class="capsule-sub">Write something for a future version of you. It stays locked until the date you choose.</p>
+        <textarea id="capsuleText" rows="5" placeholder="Dear future me…"></textarea>
+        <input type="date" id="capsuleDate">
+        <button class="ghost-btn" id="capsuleSeal">Seal it</button>
+        <div id="capsuleList"></div>
+        <button class="ghost-btn light" id="capsuleClose">Close</button>
+      </div>
+    </div>
+
     <div id="breathe-overlay">
       <div id="breath-circle"></div>
       <div id="breath-word">Breathe in…</div>
@@ -232,12 +338,7 @@
     <div id="topbar">
       <div id="mode-title">You're in <strong id="modeName">Reflect</strong> mode</div>
       <div id="mood-track">
-        <span>Mood today:</span>
-        <div class="mood-dot" data-v="1">😞</div>
-        <div class="mood-dot" data-v="2">😕</div>
-        <div class="mood-dot" data-v="3">😐</div>
-        <div class="mood-dot" data-v="4">🙂</div>
-        <div class="mood-dot" data-v="5">😊</div>
+        <button id="moodTriggerBtn">Mood today: <strong id="moodCurrentLabel">not set</strong></button>
       </div>
     </div>
 
@@ -255,6 +356,8 @@
 /* ---------------- Config / State ---------------- */
 const SAFETY_CLAUSE = ` You are not a doctor, therapist, or emergency service, and you never diagnose conditions. If the person expresses intent to seriously harm themselves or someone else, prioritize their immediate safety above anything else: gently but clearly encourage them to contact emergency services or a crisis line in their location right now, to move away from anything they could use to harm themselves, and to reach out to a trusted person who can be with them. Do not provide instructions related to self-harm, suicide, or violence under any circumstances.`;
 
+const DEFAULT_API_KEY = "AIzaSyDDFRHIKKvfw55Rc_9jU4pTcBLNbwYIL5w";
+
 const MODES = {
   rant: {
     label: "Rant",
@@ -270,6 +373,21 @@ const MODES = {
     label: "Advice",
     desc: "Practical next steps",
     systemPrompt: `You are Assistant, a caring and grounded companion in "Advice mode." The person wants practical, concrete guidance. Briefly acknowledge the feeling, then offer clear, small, realistic next steps rather than vague positivity, and end with one gentle question to check what would actually help them. Keep it actionable but warm, not clinical, 3-6 sentences.` + SAFETY_CLAUSE
+  },
+  gratitude: {
+    label: "Gratitude",
+    desc: "Notice the good stuff",
+    systemPrompt: `You are Assistant, a warm and genuinely curious companion in "Gratitude mode." Help the person notice and sit with good things, however small — a person, a moment, a small win, something that made today easier. Ask specific, curious follow-up questions about what they share rather than generic ones, and help them notice why it mattered, not just that it happened. Never force positivity if they're clearly not in the mood — gently acknowledge that and offer to switch, rather than pushing. Keep replies warm and short (2-5 sentences).` + SAFETY_CLAUSE
+  },
+  grounding: {
+    label: "Grounding",
+    desc: "For when it's a lot right now",
+    systemPrompt: `You are Assistant, a calm and steady presence in "Grounding mode," meant for moments of high anxiety, panic, or feeling overwhelmed. Speak slowly and simply, in short sentences. Guide the person through present-moment grounding techniques one step at a time — for example naming things they can see, hear, or feel, or slow breathing — rather than discussing the problem itself. Don't ask about what's wrong or offer analysis; the goal is to help their nervous system settle first. Keep replies very short (1-3 sentences), gentle, and concrete.` + SAFETY_CLAUSE
+  },
+  winddown: {
+    label: "Wind Down",
+    desc: "Quiet the noise before sleep",
+    systemPrompt: `You are Assistant, a soft-spoken, unhurried companion in "Wind Down mode," meant for late at night when the person's mind is racing and they're trying to fall asleep. Speak slowly, keep sentences short and soothing, and gently help them set down the day rather than solve it — this is not the time for problem-solving or advice. You can offer to listen quietly, suggest gently letting a thought go until tomorrow, or offer a calm closing thought. Avoid stimulating topics or long questions. Keep replies brief (1-4 sentences), quiet, and low-energy.` + SAFETY_CLAUSE
   }
 };
 
@@ -281,7 +399,7 @@ const state = {
   messages: JSON.parse(localStorage.getItem('haven_messages') || '[]')
 };
 
-document.getElementById('apiKey').value = state.apiKey;
+document.getElementById('apiKey').value = state.apiKey || DEFAULT_API_KEY;
 
 /* ---------------- Mode buttons ---------------- */
 const modesEl = document.getElementById('modes');
@@ -353,14 +471,7 @@ async function sendMessage(){
   saveMessages();
   renderChat();
 
-  const key = document.getElementById('apiKey').value.trim();
-  if(!key){
-    const warn = "I need a free Gemini API key before I can reply — get one at aistudio.google.com (no card needed) and paste it into the sidebar.";
-    state.messages.push({role:'assistant', text: warn});
-    saveMessages(); renderChat();
-    return;
-  }
-
+  const key = document.getElementById('apiKey').value.trim() || DEFAULT_API_KEY;
   const thinkingId = 'thinking-' + Date.now();
   const thinkDiv = document.createElement('div');
   thinkDiv.className = 'msg haven';
@@ -406,16 +517,126 @@ async function sendMessage(){
   }
 }
 
-/* ---------------- Mood tracker ---------------- */
-document.querySelectorAll('.mood-dot').forEach(d => {
-  d.onclick = () => {
-    document.querySelectorAll('.mood-dot').forEach(x => x.classList.remove('sel'));
-    d.classList.add('sel');
-    const log = JSON.parse(localStorage.getItem('haven_moods') || '[]');
-    log.push({date: new Date().toISOString(), value: d.dataset.v});
-    localStorage.setItem('haven_moods', JSON.stringify(log));
-  };
+/* ---------------- Mood tracker (expanded emotions, tracking only) ---------------- */
+const EMOTIONS = [
+  { v:'sad', emoji:'😞', label:'Sad' },
+  { v:'down', emoji:'😢', label:'Down' },
+  { v:'angry', emoji:'😠', label:'Angry' },
+  { v:'anxious', emoji:'😰', label:'Anxious' },
+  { v:'tired', emoji:'😴', label:'Tired' },
+  { v:'numb', emoji:'😐', label:'Numb' },
+  { v:'overwhelmed', emoji:'😵', label:'Overwhelmed' },
+  { v:'okay', emoji:'🙂', label:'Okay' },
+  { v:'calm', emoji:'😌', label:'Calm' },
+  { v:'happy', emoji:'😊', label:'Happy' },
+  { v:'grateful', emoji:'🤗', label:'Grateful' },
+  { v:'excited', emoji:'🤩', label:'Excited' }
+];
+
+const moodOverlay = document.getElementById('mood-overlay');
+const moodGrid = document.getElementById('moodGrid');
+const moodCurrentLabel = document.getElementById('moodCurrentLabel');
+
+function renderMoodGrid(){
+  moodGrid.innerHTML = '';
+  const lastMood = localStorage.getItem('assistant_current_mood');
+  EMOTIONS.forEach(e => {
+    const chip = document.createElement('div');
+    chip.className = 'mood-chip' + (e.v === lastMood ? ' sel' : '');
+    chip.innerHTML = `<span class="emoji">${e.emoji}</span><span>${e.label}</span>`;
+    chip.onclick = () => {
+      const log = JSON.parse(localStorage.getItem('haven_moods') || '[]');
+      log.push({ date: new Date().toISOString(), value: e.v, label: e.label });
+      localStorage.setItem('haven_moods', JSON.stringify(log));
+      localStorage.setItem('assistant_current_mood', e.v);
+      moodCurrentLabel.textContent = `${e.emoji} ${e.label}`;
+      moodOverlay.classList.remove('show');
+    };
+    moodGrid.appendChild(chip);
+  });
+}
+document.getElementById('moodTriggerBtn').onclick = () => {
+  renderMoodGrid();
+  moodOverlay.classList.add('show');
+};
+moodOverlay.addEventListener('click', (e) => {
+  if(e.target === moodOverlay) moodOverlay.classList.remove('show');
 });
+
+const savedMoodKey = localStorage.getItem('assistant_current_mood');
+if(savedMoodKey){
+  const found = EMOTIONS.find(e => e.v === savedMoodKey);
+  if(found) moodCurrentLabel.textContent = `${found.emoji} ${found.label}`;
+}
+
+/* ---------------- Palette switcher (recolors the whole app) ---------------- */
+const PALETTES = {
+  dusk: {
+    name: 'Dusk Sage', swatch: '#86a996',
+    vars: { '--bg':'#0c4c4c', '--surface':'#15221f', '--surface-2':'#1c2c29', '--line':'#2a3b37',
+      '--text':'#eae6dd', '--text-dim':'#9fb0ab', '--sage':'#86a996', '--sage-soft':'#438262',
+      '--blush':'#e3b6a0', '--blush-soft':'#b07960', '--focus':'#bae1ca' },
+    particle: '#e3b6a0'
+  },
+  sunset: {
+    name: 'Sunset', swatch: '#e07856',
+    vars: { '--bg':'#2e1a1a', '--surface':'#3a2220', '--surface-2':'#452926', '--line':'#5a3936',
+      '--text':'#f5e8e0', '--text-dim':'#c9a89c', '--sage':'#e0876a', '--sage-soft':'#b8664c',
+      '--blush':'#ffcf8a', '--blush-soft':'#d9a662', '--focus':'#ffd9b0' },
+    particle: '#ffcf8a'
+  },
+  ocean: {
+    name: 'Ocean', swatch: '#4a90a4',
+    vars: { '--bg':'#0c2733', '--surface':'#123641', '--surface-2':'#17434f', '--line':'#255562',
+      '--text':'#e2f2f4', '--text-dim':'#9fc2ca', '--sage':'#5fa8bb', '--sage-soft':'#3d8296',
+      '--blush':'#a8ecdc', '--blush-soft':'#6fc4b0', '--focus':'#bfeee2' },
+    particle: '#a8ecdc'
+  },
+  lavender: {
+    name: 'Lavender', swatch: '#9a86c2',
+    vars: { '--bg':'#241c33', '--surface':'#2e2440', '--surface-2':'#372c4d', '--line':'#493a63',
+      '--text':'#ede6f5', '--text-dim':'#bcabd6', '--sage':'#a992c9', '--sage-soft':'#7f63a8',
+      '--blush':'#eed6f5', '--blush-soft':'#c9a3dd', '--focus':'#dcc8f0' },
+    particle: '#eed6f5'
+  }
+};
+
+let currentPalette = localStorage.getItem('assistant_palette') || 'dusk';
+
+function applyPalette(key){
+  const p = PALETTES[key];
+  if(!p) return;
+  Object.entries(p.vars).forEach(([varName, val]) => {
+    document.documentElement.style.setProperty(varName, val);
+  });
+  weatherLayer.style.background = 'transparent';
+  weatherLayer.innerHTML = '';
+  for(let i = 0; i < 14; i++){
+    const particle = document.createElement('div');
+    particle.className = 'weather-particle';
+    particle.style.left = Math.random() * 100 + '%';
+    particle.style.background = p.particle;
+    particle.style.animationDelay = (Math.random() * 14) + 's';
+    particle.style.animationDuration = (10 + Math.random() * 8) + 's';
+    weatherLayer.appendChild(particle);
+  }
+  currentPalette = key;
+  localStorage.setItem('assistant_palette', key);
+  document.querySelectorAll('.palette-swatch').forEach(s => s.classList.toggle('sel', s.dataset.key === key));
+}
+
+const weatherLayer = document.getElementById('weather-layer');
+const paletteSwatchesEl = document.getElementById('paletteSwatches');
+Object.entries(PALETTES).forEach(([key, p]) => {
+  const sw = document.createElement('div');
+  sw.className = 'palette-swatch' + (key === currentPalette ? ' sel' : '');
+  sw.style.background = p.swatch;
+  sw.title = p.name;
+  sw.dataset.key = key;
+  sw.onclick = () => applyPalette(key);
+  paletteSwatchesEl.appendChild(sw);
+});
+applyPalette(currentPalette);
 
 /* ---------------- Voice: speech synthesis (talk back) ---------------- */
 const voiceSelect = document.getElementById('voiceSelect');
@@ -545,6 +766,82 @@ document.getElementById('clearBtn').onclick = () => {
     renderChat();
   }
 };
+/* ---------------- Time Capsule ---------------- */
+function getCapsules(){ return JSON.parse(localStorage.getItem('assistant_capsules') || '[]'); }
+function saveCapsules(list){ localStorage.setItem('assistant_capsules', JSON.stringify(list)); }
+
+const capsuleOverlay = document.getElementById('capsule-overlay');
+const capsuleBanner = document.getElementById('capsule-banner');
+
+document.getElementById('capsuleBtn').onclick = () => {
+  capsuleOverlay.classList.add('show');
+  renderCapsules();
+};
+document.getElementById('capsuleClose').onclick = () => {
+  capsuleOverlay.classList.remove('show');
+};
+document.getElementById('capsuleSeal').onclick = () => {
+  const text = document.getElementById('capsuleText').value.trim();
+  const date = document.getElementById('capsuleDate').value;
+  if(!text || !date){ alert('Write something and pick a date first.'); return; }
+  const list = getCapsules();
+  list.push({ id: Date.now(), text, unlockDate: date, opened: false });
+  saveCapsules(list);
+  document.getElementById('capsuleText').value = '';
+  document.getElementById('capsuleDate').value = '';
+  renderCapsules();
+  checkCapsuleBanner();
+};
+function renderCapsules(){
+  const list = getCapsules();
+  const container = document.getElementById('capsuleList');
+  container.innerHTML = '';
+  if(list.length === 0){
+    container.innerHTML = '<p class="capsule-sub">No capsules yet.</p>';
+    return;
+  }
+  const today = new Date().toISOString().slice(0,10);
+  list.slice().reverse().forEach(c => {
+    const ready = c.unlockDate <= today;
+    const div = document.createElement('div');
+    div.className = 'capsule-item' + (ready ? ' ready' : '');
+    if(!ready){
+      div.innerHTML = `<span>🔒 Locked until ${c.unlockDate}</span>`;
+    } else if(!c.opened){
+      div.innerHTML = `<span>💌 Ready to open</span>`;
+      const btn = document.createElement('button');
+      btn.className = 'ghost-btn';
+      btn.textContent = 'Open it';
+      btn.onclick = () => {
+        const idx = list.findIndex(x => x.id === c.id);
+        list[idx].opened = true;
+        saveCapsules(list);
+        renderCapsules();
+        checkCapsuleBanner();
+      };
+      div.appendChild(btn);
+    } else {
+      div.innerHTML = `<span>Written for ${c.unlockDate}:</span><span>${escapeHtml(c.text)}</span>`;
+    }
+    container.appendChild(div);
+  });
+}
+function checkCapsuleBanner(){
+  const list = getCapsules();
+  const today = new Date().toISOString().slice(0,10);
+  const readyCount = list.filter(c => c.unlockDate <= today && !c.opened).length;
+  if(readyCount > 0){
+    capsuleBanner.textContent = `💌 ${readyCount} time capsule${readyCount > 1 ? 's are' : ' is'} ready to open`;
+    capsuleBanner.classList.add('show');
+  } else {
+    capsuleBanner.classList.remove('show');
+  }
+}
+capsuleBanner.onclick = () => {
+  capsuleOverlay.classList.add('show');
+  renderCapsules();
+};
+checkCapsuleBanner();
 </script>
 </body>
 </html>
