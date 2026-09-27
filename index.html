@@ -356,8 +356,6 @@
 /* ---------------- Config / State ---------------- */
 const SAFETY_CLAUSE = ` You are not a doctor, therapist, or emergency service, and you never diagnose conditions. If the person expresses intent to seriously harm themselves or someone else, prioritize their immediate safety above anything else: gently but clearly encourage them to contact emergency services or a crisis line in their location right now, to move away from anything they could use to harm themselves, and to reach out to a trusted person who can be with them. Do not provide instructions related to self-harm, suicide, or violence under any circumstances.`;
 
-const DEFAULT_API_KEY = "AIzaSyDDFRHIKKvfw55Rc_9jU4pTcBLNbwYIL5w";
-
 const MODES = {
   rant: {
     label: "Rant",
@@ -399,7 +397,7 @@ const state = {
   messages: JSON.parse(localStorage.getItem('haven_messages') || '[]')
 };
 
-document.getElementById('apiKey').value = state.apiKey || DEFAULT_API_KEY;
+document.getElementById('apiKey').value = state.apiKey;
 
 /* ---------------- Mode buttons ---------------- */
 const modesEl = document.getElementById('modes');
@@ -471,7 +469,16 @@ async function sendMessage(){
   saveMessages();
   renderChat();
 
-  const key = document.getElementById('apiKey').value.trim() || DEFAULT_API_KEY;
+  const key = document.getElementById('apiKey').value.trim();
+
+  // No key on file: don't even try the request, just say so clearly.
+  if(!key){
+    state.messages.push({role:'assistant', text: "I need a Gemini API key before I can reply. Paste one into the \"Gemini API Key\" box in the sidebar — it's free from aistudio.google.com/apikey, no card needed — then send your message again. It's stored only in this browser."});
+    saveMessages();
+    renderChat();
+    return;
+  }
+
   const thinkingId = 'thinking-' + Date.now();
   const thinkDiv = document.createElement('div');
   thinkDiv.className = 'msg haven';
@@ -480,13 +487,26 @@ async function sendMessage(){
   chatEl.appendChild(thinkDiv);
   chatEl.scrollTop = chatEl.scrollHeight;
 
+  // Stable alias — always points at Google's current GA flash model,
+  // so this keeps working even after Google retires today's snapshot.
+  const MODEL = 'gemini-flash-latest';
+
+  function friendlyApiError(status, apiMessage){
+    if(status === 400) return "Gemini rejected that request (" + (apiMessage || 'bad request') + "). Double-check the API key was copied in full, with no extra spaces.";
+    if(status === 401 || status === 403) return "Gemini says this API key isn't valid or isn't allowed to make this call. Grab a fresh one from aistudio.google.com/apikey and paste it into the sidebar.";
+    if(status === 404) return "Gemini couldn't find the model this app asked for (" + MODEL + "). Google may have renamed or retired it — try again in a bit, or let me know so the model name can be updated.";
+    if(status === 429) return "Gemini's free tier is rate-limited and this key just hit that limit. Wait a minute and try again, or use a different key.";
+    if(status >= 500) return "Gemini's servers had a problem on their end (HTTP " + status + "). This isn't something wrong with the key — just try again shortly.";
+    return "Gemini returned an error (HTTP " + status + (apiMessage ? ': ' + apiMessage : '') + ").";
+  }
+
   try{
     const history = state.messages.slice(-16).map(m => ({
       role: m.role === 'user' ? 'user' : 'model',
       parts: [{ text: m.text }]
     }));
 
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${key}`, {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(key)}`, {
       method:'POST',
       headers:{ 'Content-Type':'application/json' },
       body: JSON.stringify({
@@ -494,24 +514,40 @@ async function sendMessage(){
         contents: history
       })
     });
-    const data = await res.json();
+
+    // The response might not be JSON at all (e.g. a proxy/error page) — never let that crash the app.
+    let data = null;
+    try{ data = await res.json(); } catch(parseErr){ data = null; }
+
     document.getElementById(thinkingId)?.remove();
 
     let reply;
-    if(data.candidates && data.candidates.length && data.candidates[0].content){
+    if(!res.ok){
+      reply = friendlyApiError(res.status, data?.error?.message);
+    } else if(data?.candidates?.length && data.candidates[0].content?.parts){
       reply = data.candidates[0].content.parts.map(p => p.text || '').join('\n').trim();
-    } else if (data.error){
-      reply = "Something went wrong reaching Gemini: " + data.error.message;
+      if(!reply){
+        const reason = data.candidates[0].finishReason;
+        reply = reason === 'SAFETY'
+          ? "Gemini declined to answer that particular message. Try rephrasing, or switch modes."
+          : "I got an empty reply back — please try sending that again.";
+      }
+    } else if(data?.promptFeedback?.blockReason){
+      reply = "Gemini blocked that message (" + data.promptFeedback.blockReason + "). Try rephrasing it.";
     } else {
-      reply = "I didn't get a usable reply — please try again.";
+      reply = "I didn't get a usable reply from Gemini — please try again.";
     }
     state.messages.push({role:'assistant', text: reply});
     saveMessages();
     renderChat();
-    if(state.speakEnabled) speak(reply);
+    if(state.speakEnabled && res.ok) speak(reply);
   } catch(err){
     document.getElementById(thinkingId)?.remove();
-    state.messages.push({role:'assistant', text: "I couldn't reach Gemini just now (" + err.message + "). Check your connection and API key."});
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    const msg = offline
+      ? "Looks like you're offline right now. Reconnect and send that again."
+      : "I couldn't reach Gemini just now (" + err.message + "). This is usually a network hiccup or an ad-blocker/firewall blocking generativelanguage.googleapis.com — check your connection and try again.";
+    state.messages.push({role:'assistant', text: msg});
     saveMessages();
     renderChat();
   }
