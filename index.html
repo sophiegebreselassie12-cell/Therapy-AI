@@ -209,14 +209,6 @@
     </div>
 
     <div class="side-block">
-      <div class="side-label">AMBIENCE</div>
-      <div class="toggle-row">
-        <span>Soft background sound</span>
-        <div class="switch" id="ambientToggle"><div class="knob"></div></div>
-      </div>
-    </div>
-
-    <div class="side-block">
       <div class="side-label">GEMINI API KEY (FREE)</div>
       <input type="password" id="apiKey" placeholder="AIza...">
       <span style="font-size:11px;color:var(--text-dim);">Free from aistudio.google.com — no card needed. Stored only in this browser.</span>
@@ -284,7 +276,6 @@ const MODES = {
 const state = {
   mode: localStorage.getItem('haven_mode') || 'reflect',
   speakEnabled: localStorage.getItem('haven_speak') === 'true',
-  ambientOn: localStorage.getItem('haven_ambient') === 'true',
   voiceURI: localStorage.getItem('haven_voice') || '',
   apiKey: localStorage.getItem('haven_apikey') || '',
   messages: JSON.parse(localStorage.getItem('haven_messages') || '[]')
@@ -497,57 +488,6 @@ if(SR){
   micBtn.title = 'Voice input not supported in this browser';
   micBtn.style.opacity = 0.4;
 }
-
-/* ---------------- Ambient sound (generative, no files needed) ---------------- */
-let audioCtx = null, ambientNodes = [];
-function startAmbient(){
-  if(audioCtx) return;
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  const master = audioCtx.createGain();
-  master.gain.value = 0.05;
-  master.connect(audioCtx.destination);
-
-  const freqs = [110, 165, 220, 277];
-  freqs.forEach((f, i) => {
-    const osc = audioCtx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.value = f;
-    const g = audioCtx.createGain();
-    g.gain.value = 0.0;
-    osc.connect(g);
-    g.connect(master);
-    osc.start();
-
-    const lfo = audioCtx.createOscillator();
-    lfo.frequency.value = 0.05 + i * 0.02;
-    const lfoGain = audioCtx.createGain();
-    lfoGain.gain.value = 0.03;
-    lfo.connect(lfoGain);
-    lfoGain.connect(g.gain);
-    g.gain.value = 0.03;
-    lfo.start();
-
-    ambientNodes.push(osc, lfo, g);
-  });
-}
-function stopAmbient(){
-  if(!audioCtx) return;
-  audioCtx.close();
-  audioCtx = null;
-  ambientNodes = [];
-}
-const bgMusic = new Audio('marlowemusic-white-noise-588898.mp3');
-bgMusic.loop = true;
-bgMusic.volume = 0.3;
-
-const ambientToggle = document.getElementById('ambientToggle');
-syncSwitch(ambientToggle, state.ambientOn);
-ambientToggle.onclick = () => {
-  state.ambientOn = !state.ambientOn;
-  localStorage.setItem('haven_ambient', state.ambientOn);
-  syncSwitch(ambientToggle, state.ambientOn);
-  state.ambientOn ? bgMusic.play() : bgMusic.pause();
-};
 
 /* ---------------- API key persistence ---------------- */
 document.getElementById('apiKey').addEventListener('change', (e) => {
